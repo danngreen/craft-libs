@@ -60,6 +60,10 @@ pub(in crate::docking) const APPKIT_CORNER: f32 = 15.0;
 /// How far AppKit's edge resize area reaches into the content between the corners: a few
 /// points; most of it lies outside the window.
 const APPKIT_EDGE: f32 = 4.0;
+/// How far AppKit's edge resize area reaches past the window's frame, over what lies behind
+/// it: 3 pt resizes on macOS 26, 4 pt doesn't. Past a rounded corner it reaches about 1 pt,
+/// which [`in_appkit_outer_band`] leaves out.
+const APPKIT_OUTSIDE: f32 = 3.5;
 
 /// Where the × of a native window's bar sits and where it takes clicks, in points from the
 /// window's top and trailing edges, mirrored in a right-to-left layout.
@@ -692,6 +696,13 @@ impl<P: Clone + Eq + Hash + Debug + Send + Sync + 'static> Renderer<'_, P> {
             if window.panels().all(|p| self.permissions(p).movable) {
                 if OS_RESIZES {
                     leave_cursor_to_os(ui, full);
+                    // Where AppKit resizes the window from outside it, over the main window.
+                    if !blocked && let Some(rect) = ui.input(|i| i.viewport().inner_rect) {
+                        let body = body_input(ui.ctx());
+                        let mut body = body.lock();
+                        let pass = body.pass;
+                        body.resize_bands.insert(viewport, (pass, rect));
+                    }
                 } else {
                     resize_edges(ui, self.id.with(("native-edges", window.id)), full, &buttons);
                 }
@@ -1095,6 +1106,11 @@ pub(super) struct NativeBodyInput {
     /// The pointer came back to the main window from a native window while the main window had
     /// no keyboard: a palette with the keyboard hands it back.
     pointer_returned: bool,
+    /// The desktop content rect of each native window AppKit resizes, and the main window's pass
+    /// that drew it: its resize area reaches past it, over the main window.
+    resize_bands: std::collections::HashMap<ViewportId, (u64, Rect)>,
+    /// A button is held in the main window.
+    root_held: bool,
 }
 
 /// The app drag routing and routed events shared by every native input hook of `ctx`.
@@ -1143,6 +1159,30 @@ impl egui::Plugin for NativeInput {
             if viewport == ViewportId::ROOT {
                 if input.focused {
                     body.pointer_returned = false;
+                }
+                // AppKit's resize area of a palette reaches a few points past its frame: there
+                // the main window gets the moves, but AppKit shows its resize cursor and takes a
+                // press, so the pointer is the palette's. Not while a button is held in the main
+                // window: a drag there keeps its moves.
+                let pass = body.pass;
+                body.resize_bands.retain(|_, (at, _)| *at + 1 >= pass);
+                for event in &input.events {
+                    if let Event::PointerButton { pressed, .. } = event {
+                        body.root_held = *pressed;
+                    }
+                }
+                let origin = input.viewports.get(&ViewportId::ROOT).and_then(|info| info.inner_rect).map(|r| r.min.to_vec2());
+                let last_move = input.events.iter().rev().find_map(|e| if let Event::PointerMoved(p) = e { Some(*p) } else { None });
+                let pressing = input.events.iter().any(|e| matches!(e, Event::PointerButton { .. }));
+                if let (Some(origin), Some(pos), false, false) = (origin, last_move, pressing, body.root_held)
+                    && let Some(window) = body.resize_bands.iter().find(|(_, (_, rect))| in_appkit_outer_band(*rect, pos + origin)).map(|(v, _)| *v)
+                {
+                    input.events.retain(|e| !matches!(e, Event::PointerMoved(_)));
+                    if body.pointer_window != Some(window) {
+                        body.pointer_window = Some(window);
+                        body.root_pointer_gone = false;
+                        body.pointer_returned = false;
+                    }
                 }
                 if input.events.iter().any(|e| matches!(e, Event::PointerMoved(_) | Event::PointerButton { .. })) {
                     body.pointer_returned |= body.pointer_window.take().is_some() && !input.focused;
@@ -1444,6 +1484,12 @@ fn leave_cursor_to_os(ui: &Ui, full: Rect) {
     if ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| appkit_resize_areas(full).iter().any(|area| area.contains(p))) {
         ui.ctx().set_cursor_icon(CursorIcon::Default);
     }
+}
+
+/// Whether desktop point `p` is in AppKit's resize area outside the window whose content is
+/// `rect`: within [`APPKIT_OUTSIDE`] of an edge, beside it rather than past a corner.
+fn in_appkit_outer_band(rect: Rect, p: Pos2) -> bool {
+    !rect.contains(p) && rect.expand(APPKIT_OUTSIDE).contains(p) && (rect.x_range().contains(p.x) || rect.y_range().contains(p.y))
 }
 
 /// AppKit's resize areas inside a window's content `rect`: a square at each corner and a strip
