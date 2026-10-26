@@ -575,6 +575,17 @@ windows from the first frame. `DockArea::native_windows(bool)` overrides the cho
   `Paste` without the key). The app feeds them to the shortcut handling it runs on the main
   window. A window where any widget has keyboard focus forwards nothing, and an Escape that
   cancels a drag is not forwarded.
+- **Keyboard back to the main window.** A click in a palette gives its OS window the keyboard.
+  Once the pointer is back over the main window, the palette hands the keyboard to it
+  (`ViewportCommand::Focus`), as macOS palettes do, so the app's shortcuts and tool cursor
+  work there without a click. It keeps the keyboard while one of its text fields has it, while
+  a button is held, and while one of its popups is open. A normal window (a viewer) keeps the
+  keyboard as any window does.
+- **Pointer.** macOS tells a window that the pointer left only when it leaves the window's
+  frame, so over a native window in front of the main window, the main window kept its last
+  pointer position and the hover there. Once the pointer moves over a native window, the main
+  window gets `Event::PointerGone` at the start of its next pass, until the pointer moves or
+  presses in the main window again.
 - **Input methods.** egui's IME descriptor (`PlatformOutput::ime`) goes out from the pass of
   the window whose editor has the keyboard. A `craft_ui::ime::Composer` in a panel body of a
   native window records its descriptor while the window draws, and the dock area publishes it
