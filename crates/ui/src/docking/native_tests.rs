@@ -664,6 +664,23 @@ fn unused_keys_in_a_native_window_reach_the_app() {
     assert!(out.forwarded_events.is_empty());
 }
 
+#[test]
+fn the_key_that_ends_a_fields_editing_is_not_forwarded() {
+    // Enter ends a text field's editing in a native window and takes its focus in the same frame:
+    // the main window must not also act on it (VectorCraft opened its Move dialog).
+    let mut d = driver(layout(true));
+    let id = window(&d, 5).id;
+    d.content.text = Some(5);
+    d.content.focus_text = true;
+    d.step(vec![]);
+    let enter = Event::Key { key: Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE };
+    let out = d.window_step(id, vec![enter]);
+    assert!(out.forwarded_events.is_empty(), "{:?}", out.forwarded_events);
+    // With the field done, the window's keys are the app's again.
+    let out = d.window_step(id, vec![Event::Text("v".into())]);
+    assert_eq!(out.forwarded_events, vec![Event::Text("v".into())]);
+}
+
 #[cfg(feature = "serde")]
 #[test]
 fn a_native_window_saves_its_id_place_and_monitor() {

@@ -573,7 +573,8 @@ windows from the first frame. `DockArea::native_windows(bool)` overrides the cho
   `DockOutput::forwarded_events`, with the modifiers held in that window in
   `DockOutput::forwarded_modifiers` (egui-winit sends Cmd/Ctrl+C, X and V as `Copy`, `Cut` and
   `Paste` without the key). The app feeds them to the shortcut handling it runs on the main
-  window. A window where any widget has keyboard focus forwards nothing, and an Escape that
+  window. A window where any widget has keyboard focus forwards nothing, nor does a frame that
+  began with one: the Enter that ends a text field's editing is the field's. An Escape that
   cancels a drag is not forwarded.
 - **Input methods.** egui's IME descriptor (`PlatformOutput::ime`) goes out from the pass of
   the window whose editor has the keyboard. A `craft_ui::ime::Composer` in a panel body of a

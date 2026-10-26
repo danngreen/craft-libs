@@ -654,6 +654,9 @@ impl<P: Clone + Eq + Hash + Debug + Send + Sync + 'static> Renderer<'_, P> {
             if own {
                 crate::ime::window::begin_window(ui.ctx());
             }
+            // A field that had the keyboard as the frame began took this frame's keys, even if
+            // they ended its editing (Enter): they are not forwarded.
+            let had_focus = ui.memory(|m| m.focused().is_some());
             self.floating_body(ui, window, body, full);
             if own {
                 self.content.window_drawn(ui);
@@ -695,7 +698,9 @@ impl<P: Clone + Eq + Hash + Debug + Send + Sync + 'static> Renderer<'_, P> {
             } else {
                 self.paint_cross(ui, &mut surface);
                 self.route_body_drag(ui.ctx(), Some(window.id));
-                self.forward_events(ui);
+                if !had_focus {
+                    self.forward_events(ui);
+                }
                 self.report_files(ui, window, viewport);
             }
             ui.input(|i| Report {
