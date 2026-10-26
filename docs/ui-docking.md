@@ -576,11 +576,13 @@ windows from the first frame. `DockArea::native_windows(bool)` overrides the cho
   window. A window where any widget has keyboard focus forwards nothing, and an Escape that
   cancels a drag is not forwarded.
 - **Keyboard back to the main window.** A click in a palette gives its OS window the keyboard.
-  Once the pointer is back over the main window, the palette hands the keyboard to it
-  (`ViewportCommand::Focus`), as macOS palettes do, so the app's shortcuts and tool cursor
-  work there without a click. It keeps the keyboard while one of its text fields has it, while
-  a button is held, and while one of its popups is open. A normal window (a viewer) keeps the
-  keyboard as any window does.
+  Once the pointer comes back from the palette to the main window, the palette hands the
+  keyboard to it (`ViewportCommand::Focus`), as macOS palettes do, so the app's shortcuts and
+  tool cursor work there without a click. While one of its text fields has the keyboard, a
+  button is held or one of its popups is open, the hand-back waits. A press in AppKit's resize
+  area, which reaches a few points past the palette's frame over the main window, focuses the
+  palette without the pointer coming from it, and the palette keeps the keyboard. A normal
+  window (a viewer) keeps the keyboard as any window does.
 - **Pointer.** macOS tells a window that the pointer left only when it leaves the window's
   frame, so over a native window in front of the main window, the main window kept its last
   pointer position and the hover there. Once the pointer moves over a native window, the main
