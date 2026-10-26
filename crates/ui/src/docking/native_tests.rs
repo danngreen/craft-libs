@@ -2018,6 +2018,39 @@ fn the_main_window_loses_the_pointer_while_a_native_window_has_it() {
     assert_eq!(main_pointer(&d), Some(main));
 }
 
+/// AppKit's resize area reaches a few points past a palette's frame, over the main window:
+/// there AppKit shows its resize cursor and takes a press, so the main window is told the
+/// pointer left, as over the palette itself, except while a drag in the main window holds it.
+#[cfg(target_os = "macos")]
+#[test]
+fn the_main_window_loses_the_pointer_over_a_palettes_outer_resize_area() {
+    let main_pointer = |d: &DockDriver<u32, Content>| d.ctx.input_for(egui::ViewportId::ROOT, |i| i.pointer.hover_pos());
+    let mut d = driver(layout(true));
+    let viewport = d.viewport(window(&d, 5).id);
+    d.step(vec![]);
+    let rect = d.host().windows[&viewport].rect;
+    // 2 pt left of the palette's left edge, in the main window's coordinates.
+    let band = pos2(rect.left() - 2.0, rect.center().y) - ORIGIN.to_vec2();
+    let main = pos2(50.0, 50.0);
+    d.move_to(main);
+    assert_eq!(main_pointer(&d), Some(main));
+    d.move_to(band);
+    d.step(vec![]);
+    assert_eq!(main_pointer(&d), None, "AppKit's resize area is the palette's");
+    d.move_to(main);
+    assert_eq!(main_pointer(&d), Some(main));
+    // Further out, the pointer stays the main window's.
+    let beyond = band - vec2(6.0, 0.0);
+    d.move_to(beyond);
+    assert_eq!(main_pointer(&d), Some(beyond));
+    // A drag in the main window keeps its moves over the resize area.
+    d.press(main);
+    d.move_to(band);
+    d.step(vec![]);
+    assert_eq!(main_pointer(&d), Some(band));
+    d.release(band);
+}
+
 #[test]
 fn a_palette_hands_the_keyboard_back_when_the_pointer_comes_back_to_the_main_window() {
     // After a click in a palette, its OS window has the keyboard: the main window's tool cursor
