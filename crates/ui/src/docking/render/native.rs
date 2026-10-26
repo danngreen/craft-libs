@@ -665,6 +665,21 @@ impl<P: Clone + Eq + Hash + Debug + Send + Sync + 'static> Renderer<'_, P> {
             if own && !blocked && ui.ctx().text_edit_focused() {
                 let _ = body_input(ui.ctx()).lock().typing_next.insert(viewport);
             }
+            // A palette keeps the keyboard only while one of its text fields has it, as macOS
+            // palettes do: once the pointer is back over the main window, the main window takes
+            // the keyboard, so its shortcuts and tool cursor work without a click there. While a
+            // button is held (a drag out of the palette) or a menu of the palette is open, the
+            // palette keeps it. A viewer is an ordinary window: it keeps the keyboard.
+            if own
+                && !normal
+                && !blocked
+                && ui.input(|i| i.viewport().focused == Some(true) && !i.pointer.any_down())
+                && !ui.ctx().text_edit_focused()
+                && !egui::Popup::is_any_open(ui.ctx())
+                && ui.ctx().input_for(ViewportId::ROOT, |i| i.pointer.has_pointer() && !i.pointer.any_down())
+            {
+                ui.ctx().send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Focus);
+            }
             self.cross.held |= ui.ctx().dragged_id().is_some_and(|id| self.owned_interactions.contains(&id));
             if debug_close() {
                 debug_outlines(ui, full, &buttons);
@@ -1072,6 +1087,10 @@ pub(super) struct NativeBodyInput {
     typing_at: u64,
     /// Key and clipboard events for each window's next input, and the pass they were queued in.
     keys: std::collections::HashMap<ViewportId, (u64, Vec<Event>)>,
+    /// The native window the pointer moved over last, by its own input, until it leaves.
+    pointer_window: Option<ViewportId>,
+    /// The main window was told the pointer left it for `pointer_window`.
+    root_pointer_gone: bool,
 }
 
 /// The app drag routing and routed events shared by every native input hook of `ctx`.
@@ -1112,6 +1131,32 @@ impl egui::Plugin for NativeInput {
         {
             let mut body = body.lock();
             let body = &mut *body;
+            // macOS tells a window the pointer left it only when the pointer leaves its frame:
+            // over a native window in front of the main window, the main window got no exit and
+            // kept its last pointer (an app's canvas cursor stayed drawn at the window's edge).
+            // The pointer is the native window's once it moves there, and the main window is told
+            // it left, until it moves or presses in the main window again.
+            if viewport == ViewportId::ROOT {
+                if input.events.iter().any(|e| matches!(e, Event::PointerMoved(_) | Event::PointerButton { .. })) {
+                    body.pointer_window = None;
+                    body.root_pointer_gone = false;
+                } else if body.pointer_window.is_some() && !body.root_pointer_gone {
+                    input.events.push(Event::PointerGone);
+                    body.root_pointer_gone = true;
+                }
+            } else {
+                for event in &input.events {
+                    match event {
+                        Event::PointerMoved(_) if body.pointer_window != Some(viewport) => {
+                            body.pointer_window = Some(viewport);
+                            body.root_pointer_gone = false;
+                            ctx.request_repaint_of(ViewportId::ROOT);
+                        }
+                        Event::PointerGone if body.pointer_window == Some(viewport) => body.pointer_window = None,
+                        _ => {}
+                    }
+                }
+            }
             if viewport == ViewportId::ROOT {
                 body.pass += 1;
                 // Every window draws in the main window's pass: events for one that has not

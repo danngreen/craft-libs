@@ -585,6 +585,17 @@ windows from the first frame. `DockArea::native_windows(bool)` overrides the cho
   editor publishes the descriptor does it in `DockContent::window_drawn`, called once per
   window pass after the last body. Floating windows drawn in the main window (the web,
   Wayland) are part of its pass, which publishes as it does without docking.
+- **Keyboard back to the main window.** A click in a palette gives its OS window the keyboard.
+  Once the pointer is back over the main window, the palette hands the keyboard to it
+  (`ViewportCommand::Focus`), as macOS palettes do, so the app's shortcuts and tool cursor
+  work there without a click. It keeps the keyboard while one of its text fields has it, while
+  a button is held, and while one of its popups is open. A normal window (a viewer) keeps the
+  keyboard as any window does.
+- **Pointer.** macOS tells a window that the pointer left only when it leaves the window's
+  frame, so over a native window in front of the main window, the main window kept its last
+  pointer position and the hover there. Once the pointer moves over a native window, the main
+  window gets `Event::PointerGone` at the start of its next pass, until the pointer moves or
+  presses in the main window again.
 - **Modal dialogs.** egui's `Modal` blocks input only in the viewport it is shown in. While the
   app shows one, it passes `DockArea::input_blocked(true)`. Each native window is then drawn
   under `DockStyle::blocked_dim` (by default the panel fill at 60 %), and its bar, tabs, body
