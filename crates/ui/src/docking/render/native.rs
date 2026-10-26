@@ -666,17 +666,22 @@ impl<P: Clone + Eq + Hash + Debug + Send + Sync + 'static> Renderer<'_, P> {
                 let _ = body_input(ui.ctx()).lock().typing_next.insert(viewport);
             }
             // A palette keeps the keyboard only while one of its text fields has it, as macOS
-            // palettes do: once the pointer is back over the main window, the main window takes
-            // the keyboard, so its shortcuts and tool cursor work without a click there. While a
-            // button is held (a drag out of the palette) or a menu of the palette is open, the
-            // palette keeps it. A viewer is an ordinary window: it keeps the keyboard.
+            // palettes do: once the pointer comes back from it to the main window, the main
+            // window takes the keyboard, so its shortcuts and tool cursor work without a click
+            // there. Only on that return: a press in AppKit's resize area, which reaches past the
+            // palette's frame over the main window, focuses the palette with the pointer still the
+            // main window's, and handing the keyboard back then kept the palette from redrawing
+            // while it resized. While a text field has the keyboard, a button is held or a menu of
+            // the palette is open, the hand-back waits. A viewer is an ordinary window: it keeps
+            // the keyboard.
             if own
                 && !normal
                 && !blocked
                 && ui.input(|i| i.viewport().focused == Some(true) && !i.pointer.any_down())
                 && !ui.ctx().text_edit_focused()
                 && !egui::Popup::is_any_open(ui.ctx())
-                && ui.ctx().input_for(ViewportId::ROOT, |i| i.pointer.has_pointer() && !i.pointer.any_down())
+                && !ui.ctx().input_for(ViewportId::ROOT, |i| i.pointer.any_down())
+                && std::mem::take(&mut body_input(ui.ctx()).lock().pointer_returned)
             {
                 ui.ctx().send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Focus);
             }
@@ -1087,10 +1092,14 @@ pub(super) struct NativeBodyInput {
     typing_at: u64,
     /// Key and clipboard events for each window's next input, and the pass they were queued in.
     keys: std::collections::HashMap<ViewportId, (u64, Vec<Event>)>,
-    /// The native window the pointer moved over last, by its own input, until it leaves.
+    /// The native window the pointer moved over last, by its own input, since it last moved or
+    /// pressed in the main window.
     pointer_window: Option<ViewportId>,
     /// The main window was told the pointer left it for `pointer_window`.
     root_pointer_gone: bool,
+    /// The pointer came back to the main window from a native window while the main window had
+    /// no keyboard: a palette with the keyboard hands it back.
+    pointer_returned: bool,
 }
 
 /// The app drag routing and routed events shared by every native input hook of `ctx`.
@@ -1137,8 +1146,11 @@ impl egui::Plugin for NativeInput {
             // The pointer is the native window's once it moves there, and the main window is told
             // it left, until it moves or presses in the main window again.
             if viewport == ViewportId::ROOT {
+                if input.focused {
+                    body.pointer_returned = false;
+                }
                 if input.events.iter().any(|e| matches!(e, Event::PointerMoved(_) | Event::PointerButton { .. })) {
-                    body.pointer_window = None;
+                    body.pointer_returned |= body.pointer_window.take().is_some() && !input.focused;
                     body.root_pointer_gone = false;
                 } else if body.pointer_window.is_some() && !body.root_pointer_gone {
                     input.events.push(Event::PointerGone);
@@ -1150,9 +1162,9 @@ impl egui::Plugin for NativeInput {
                         Event::PointerMoved(_) if body.pointer_window != Some(viewport) => {
                             body.pointer_window = Some(viewport);
                             body.root_pointer_gone = false;
+                            body.pointer_returned = false;
                             ctx.request_repaint_of(ViewportId::ROOT);
                         }
-                        Event::PointerGone if body.pointer_window == Some(viewport) => body.pointer_window = None,
                         _ => {}
                     }
                 }

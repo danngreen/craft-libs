@@ -2046,10 +2046,11 @@ fn the_main_window_loses_the_pointer_while_a_native_window_has_it() {
 }
 
 #[test]
-fn a_palette_hands_the_keyboard_back_when_the_pointer_is_back_over_the_main_window() {
+fn a_palette_hands_the_keyboard_back_when_the_pointer_comes_back_to_the_main_window() {
     // After a click in a palette, its OS window has the keyboard: the main window's tool cursor
-    // and shortcuts waited for a click there. Once the pointer is back over the main window, it
-    // takes the keyboard, unless one of the palette's text fields has it.
+    // and shortcuts waited for a click there. Once the pointer comes back from the palette to
+    // the main window, the main window takes the keyboard, after the palette's text field is
+    // done with it if one has it.
     let focus_main = |d: &DockDriver<u32, Content>| {
         d.host().commands.iter().filter(|(v, c)| *v == egui::ViewportId::ROOT && matches!(c, ViewportCommand::Focus)).count()
     };
@@ -2066,8 +2067,8 @@ fn a_palette_hands_the_keyboard_back_when_the_pointer_is_back_over_the_main_wind
     assert_eq!(focus_main(&d), 0, "the pointer is over the palette");
     d.move_to(pos2(50.0, 50.0));
     d.step(vec![]);
-    assert!(focus_main(&d) > 0, "the pointer is back over the main window");
-    // A text field of the palette keeps the keyboard.
+    assert_eq!(focus_main(&d), 1, "the pointer came back to the main window, once");
+    // A text field of the palette keeps the keyboard until it is done.
     let (mut d, _) = palette();
     d.content.text = Some(5);
     d.content.focus_text = true;
@@ -2075,6 +2076,10 @@ fn a_palette_hands_the_keyboard_back_when_the_pointer_is_back_over_the_main_wind
     d.move_to(pos2(50.0, 50.0));
     d.step(vec![]);
     assert_eq!(focus_main(&d), 0, "a field of the palette has the keyboard");
+    d.content.blur_text = true;
+    d.step(vec![]);
+    d.step(vec![]);
+    assert_eq!(focus_main(&d), 1, "the field is done");
     // A viewer is an ordinary window: it keeps the keyboard.
     let (mut d, _) = palette();
     d.content.normal = vec![5];
@@ -2082,6 +2087,19 @@ fn a_palette_hands_the_keyboard_back_when_the_pointer_is_back_over_the_main_wind
     d.move_to(pos2(50.0, 50.0));
     d.step(vec![]);
     assert_eq!(focus_main(&d), 0, "a viewer has the keyboard");
+    // A press in AppKit's resize area, which reaches past the palette's frame, focuses the
+    // palette with the pointer still over the main window: the palette keeps the keyboard, or it
+    // would not redraw while it resizes.
+    let mut d = driver(layout(true));
+    let viewport = d.viewport(window(&d, 5).id);
+    d.move_to(pos2(296.0, 200.0));
+    d.host().focus = Some(viewport);
+    for _ in 0..3 {
+        d.step(vec![]);
+    }
+    d.move_to(pos2(290.0, 200.0));
+    d.step(vec![]);
+    assert_eq!(focus_main(&d), 0, "the pointer never left the main window");
 }
 
 #[test]
