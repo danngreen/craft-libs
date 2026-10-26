@@ -2000,6 +2000,64 @@ fn blocking_input_hands_focus_from_a_native_window_to_the_main_window() {
 }
 
 #[test]
+fn the_main_window_loses_the_pointer_while_a_native_window_has_it() {
+    // macOS tells a window the pointer left only when it leaves the window's frame: over a
+    // native window in front of it, the main window kept its last pointer, and an app's canvas
+    // cursor stayed drawn at the native window's edge.
+    let main_pointer = |d: &DockDriver<u32, Content>| d.ctx.input_for(egui::ViewportId::ROOT, |i| i.pointer.hover_pos());
+    let mut d = driver(layout(true));
+    let id = window(&d, 5).id;
+    let main = pos2(50.0, 50.0);
+    d.move_to(main);
+    assert_eq!(main_pointer(&d), Some(main));
+    d.window_pointer(id, ORIGIN + vec2(400.0, 200.0));
+    d.step(vec![]);
+    assert_eq!(main_pointer(&d), None, "the pointer is the native window's");
+    // Back over the main window, it has the pointer again.
+    d.move_to(main);
+    assert_eq!(main_pointer(&d), Some(main));
+}
+
+#[test]
+fn a_palette_hands_the_keyboard_back_when_the_pointer_is_back_over_the_main_window() {
+    // After a click in a palette, its OS window has the keyboard: the main window's tool cursor
+    // and shortcuts waited for a click there. Once the pointer is back over the main window, it
+    // takes the keyboard, unless one of the palette's text fields has it.
+    let focus_main = |d: &DockDriver<u32, Content>| {
+        d.host().commands.iter().filter(|(v, c)| *v == egui::ViewportId::ROOT && matches!(c, ViewportCommand::Focus)).count()
+    };
+    let palette = || {
+        let mut d = driver(layout(true));
+        let id = window(&d, 5).id;
+        let viewport = d.viewport(id);
+        d.host().focus = Some(viewport);
+        d.window_pointer(id, ORIGIN + vec2(400.0, 200.0));
+        d.step(vec![]);
+        (d, id)
+    };
+    let (mut d, _) = palette();
+    assert_eq!(focus_main(&d), 0, "the pointer is over the palette");
+    d.move_to(pos2(50.0, 50.0));
+    d.step(vec![]);
+    assert!(focus_main(&d) > 0, "the pointer is back over the main window");
+    // A text field of the palette keeps the keyboard.
+    let (mut d, _) = palette();
+    d.content.text = Some(5);
+    d.content.focus_text = true;
+    d.step(vec![]);
+    d.move_to(pos2(50.0, 50.0));
+    d.step(vec![]);
+    assert_eq!(focus_main(&d), 0, "a field of the palette has the keyboard");
+    // A viewer is an ordinary window: it keeps the keyboard.
+    let (mut d, _) = palette();
+    d.content.normal = vec![5];
+    d.step(vec![]);
+    d.move_to(pos2(50.0, 50.0));
+    d.step(vec![]);
+    assert_eq!(focus_main(&d), 0, "a viewer has the keyboard");
+}
+
+#[test]
 fn blocking_input_cancels_a_drag_in_progress() {
     // A tab drag a native window owns.
     let mut d = blocked_driver();
