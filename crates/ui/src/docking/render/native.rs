@@ -1109,8 +1109,8 @@ pub(super) struct NativeBodyInput {
     /// The desktop content rect of each native window AppKit resizes, and the main window's pass
     /// that drew it: its resize area reaches past it, over the main window.
     resize_bands: std::collections::HashMap<ViewportId, (u64, Rect)>,
-    /// A button is held in the main window.
-    root_held: bool,
+    /// The buttons held in the main window, a bit each.
+    root_held: u8,
 }
 
 /// The app drag routing and routed events shared by every native input hook of `ctx`.
@@ -1167,14 +1167,19 @@ impl egui::Plugin for NativeInput {
                 let pass = body.pass;
                 body.resize_bands.retain(|_, (at, _)| *at + 1 >= pass);
                 for event in &input.events {
-                    if let Event::PointerButton { pressed, .. } = event {
-                        body.root_held = *pressed;
+                    if let Event::PointerButton { button, pressed, .. } = event {
+                        let bit = 1 << (*button as u8);
+                        if *pressed {
+                            body.root_held |= bit;
+                        } else {
+                            body.root_held &= !bit;
+                        }
                     }
                 }
                 let origin = input.viewports.get(&ViewportId::ROOT).and_then(|info| info.inner_rect).map(|r| r.min.to_vec2());
                 let last_move = input.events.iter().rev().find_map(|e| if let Event::PointerMoved(p) = e { Some(*p) } else { None });
                 let pressing = input.events.iter().any(|e| matches!(e, Event::PointerButton { .. }));
-                if let (Some(origin), Some(pos), false, false) = (origin, last_move, pressing, body.root_held)
+                if let (Some(origin), Some(pos), false, false) = (origin, last_move, pressing, body.root_held != 0)
                     && let Some(window) = body.resize_bands.iter().find(|(_, (_, rect))| in_appkit_outer_band(*rect, pos + origin)).map(|(v, _)| *v)
                 {
                     input.events.retain(|e| !matches!(e, Event::PointerMoved(_)));
