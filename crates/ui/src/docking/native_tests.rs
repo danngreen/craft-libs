@@ -2043,6 +2043,12 @@ fn the_main_window_loses_the_pointer_while_a_native_window_has_it() {
     // Back over the main window, it has the pointer again.
     d.move_to(main);
     assert_eq!(main_pointer(&d), Some(main));
+    // The native window's input can tell of the move into it and of the pointer leaving it at
+    // once: the pointer was there, so the main window is still told it left.
+    let local = d.window_local(id, ORIGIN + vec2(400.0, 200.0)).unwrap();
+    d.window_step(id, vec![Event::PointerMoved(local), Event::PointerGone]);
+    d.step(vec![]);
+    assert_eq!(main_pointer(&d), None, "the pointer moved over the native window");
 }
 
 /// AppKit's resize area reaches a few points past a palette's frame, over the main window:
@@ -2070,8 +2076,12 @@ fn the_main_window_loses_the_pointer_over_a_palettes_outer_resize_area() {
     let beyond = band - vec2(6.0, 0.0);
     d.move_to(beyond);
     assert_eq!(main_pointer(&d), Some(beyond));
-    // A drag in the main window keeps its moves over the resize area.
+    // A drag in the main window keeps its moves over the resize area, also once another button
+    // was pressed and released during it.
     d.press(main);
+    let secondary = |pressed| Event::PointerButton { pos: main, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() };
+    d.step(vec![secondary(true)]);
+    d.step(vec![secondary(false)]);
     d.move_to(band);
     d.step(vec![]);
     assert_eq!(main_pointer(&d), Some(band));
