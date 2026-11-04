@@ -600,7 +600,9 @@ windows from the first frame. `DockArea::native_windows(bool)` overrides the cho
   presses in the main window again. On macOS the same holds within 3.5 pt outside an edge of a
   palette AppKit resizes: its resize area reaches past the frame there, and the main window,
   which gets those moves, drops them, unless a button is held in it. While a button is held in
-  the main window, a drag there keeps the pointer, over a native window too.
+  the main window, a drag there keeps the pointer, over a native window too; once the main
+  window loses focus, no button counts as held there (Windows sends no release after another
+  window takes the mouse capture).
 - **Modal dialogs.** egui's `Modal` blocks input only in the viewport it is shown in. While the
   app shows one, it passes `DockArea::input_blocked(true)`. Each native window is then drawn
   under `DockStyle::blocked_dim` (by default the panel fill at 60 %), and its bar, tabs, body
